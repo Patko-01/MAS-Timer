@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <title>MAS Timer</title>
+    <style>
+        body, html { height: 100%; }
+        .timer-display { font-family: monospace; }
+        .center-area { min-height: 60vh; }
+        .laps { max-height: 220px; overflow:auto; }
+        /* larger lap buttons */
+        .lap-row .btn {
+            padding: 1rem 1.5rem;
+            font-size: 1.6rem;
+            min-width: 180px;
+            height: auto;
+        }
+        .lap-row .btn.btn-lg { padding: 1.05rem 1.6rem; }
+        @media (max-width: 576px) {
+            .lap-row .btn { font-size: 1.15rem; min-width: 120px; }
+        }
+    </style>
+</head>
+<body class="d-flex flex-column">
+
+<main class="container my-4 d-flex flex-column align-items-center center-area">
+    <h1 class="mb-4">MAS Timer</h1>
+
+    <div class="card text-center p-4 mb-3 w-100" style="max-width:1024px;">
+        <div class="mb-3">
+            <div id="display" class="timer-display display-4">00:00.000</div>
+        </div>
+
+        <div class="d-flex justify-content-center gap-2 mb-2 flex-wrap">
+            <button id="startBtn" class="btn btn-success">Start</button>
+            <button id="stopBtn" class="btn btn-danger">Stop</button>
+            <button id="exportBtn" class="btn btn-outline-secondary">Export CSV</button>
+            <button id="resetBtn" class="btn btn-outline-danger">Reset</button>
+        </div>
+
+        <!-- Large lap buttons on their own row for easier clicking -->
+        <div class="d-flex justify-content-center gap-2 mb-3 lap-row">
+            <button id="lapABtn" class="btn btn-primary btn-lg col-6">Lap A</button>
+            <button id="lapBBtn" class="btn btn-info btn-lg col-6">Lap B</button>
+        </div>
+
+        <div class="row">
+            <div class="col-6">
+                <h6>Event A</h6>
+                <ul id="lapsA" class="list-group laps"></ul>
+            </div>
+            <div class="col-6">
+                <h6>Event B</h6>
+                <ul id="lapsB" class="list-group laps"></ul>
+            </div>
+        </div>
+    </div>
+
+    <small class="text-muted">Press Start to begin, use Lap A / Lap B to record times for two different events. Export downloads a CSV.</small>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+<script>
+    // Timer state
+    let running = false;
+    let startTime = 0;
+    let elapsedBefore = 0; // ms
+    let rafId = null;
+    const displayEl = document.getElementById('display');
+
+    // Laps
+    const lapsA = [];
+    const lapsB = [];
+
+    // Buttons & lists
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const lapABtn = document.getElementById('lapABtn');
+    const lapBBtn = document.getElementById('lapBBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const lapsAEl = document.getElementById('lapsA');
+    const lapsBEl = document.getElementById('lapsB');
+
+    function formatTime(ms) {
+        const totalMs = Math.max(0, Math.floor(ms));
+        const minutes = Math.floor(totalMs / 60000);
+        const seconds = Math.floor((totalMs % 60000) / 1000);
+        const milliseconds = totalMs % 1000;
+        return String(minutes).padStart(2,'0') + ':' + String(seconds).padStart(2,'0') + '.' + String(milliseconds).padStart(3,'0');
+    }
+
+    function update() {
+        const now = performance.now();
+        const elapsed = elapsedBefore + (now - startTime);
+        displayEl.textContent = formatTime(elapsed);
+        rafId = requestAnimationFrame(update);
+    }
+
+    function start() {
+        if (running) return;
+        running = true;
+        startTime = performance.now();
+        rafId = requestAnimationFrame(update);
+    }
+
+    function stop() {
+        if (!running) return;
+        running = false;
+        cancelAnimationFrame(rafId);
+        const now = performance.now();
+        elapsedBefore += (now - startTime);
+        displayEl.textContent = formatTime(elapsedBefore);
+    }
+
+    function resetAll() {
+        stop();
+        elapsedBefore = 0;
+        displayEl.textContent = formatTime(0);
+        lapsA.length = 0;
+        lapsB.length = 0;
+        renderLaps();
+    }
+
+    function currentElapsed() {
+        if (running) {
+            return elapsedBefore + (performance.now() - startTime);
+        }
+        return elapsedBefore;
+    }
+
+    function recordLap(bucket, listEl, arr) {
+        const t = currentElapsed();
+        const formatted = formatTime(t);
+        const index = arr.length + 1;
+        arr.push({ index, timeMs: Math.floor(t), timeStr: formatted });
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = index + '. ' + formatted;
+        listEl.insertBefore(li, listEl.firstChild);
+    }
+
+    function renderLaps() {
+        lapsAEl.innerHTML = '';
+        lapsBEl.innerHTML = '';
+        for (let i = lapsA.length - 1; i >= 0; i--) {
+            const item = lapsA[i];
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = item.index + '. ' + item.timeStr;
+            lapsAEl.appendChild(li);
+        }
+        for (let i = lapsB.length - 1; i >= 0; i--) {
+            const item = lapsB[i];
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = item.index + '. ' + item.timeStr;
+            lapsBEl.appendChild(li);
+        }
+    }
+
+    function exportCSV() {
+        // Prepare rows: event,time (human-readable hh:mm.sss)
+        const rows = [['event','time']];
+        // For export: first all laps from A (ascending by time), then all from B (ascending by time)
+        const sortedA = lapsA.slice().sort((a,b) => a.timeMs - b.timeMs);
+        const sortedB = lapsB.slice().sort((a,b) => a.timeMs - b.timeMs);
+        sortedA.forEach(item => rows.push(['lap A', item.timeStr]));
+        sortedB.forEach(item => rows.push(['lap B', item.timeStr]));
+
+        const csvContent = rows.map(r => r.map(cell => {
+            // escape quotes and wrap in quotes if needed
+            const s = String(cell).replace(/"/g, '""');
+            return (/[,\n"]/.test(s)) ? '"' + s + '"' : s;
+        }).join(',')).join('\r\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const now = new Date();
+        const ts = now.toISOString().replace(/[:.]/g, '-');
+        a.download = 'mas-timer-' + ts + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    // Attach events
+    startBtn.addEventListener('click', start);
+    stopBtn.addEventListener('click', stop);
+    lapABtn.addEventListener('click', () => recordLap('A', lapsAEl, lapsA));
+    lapBBtn.addEventListener('click', () => recordLap('B', lapsBEl, lapsB));
+    exportBtn.addEventListener('click', exportCSV);
+    resetBtn.addEventListener('click', resetAll);
+
+    // initialize
+    displayEl.textContent = formatTime(0);
+</script>
+</body>
+</html>
